@@ -567,6 +567,49 @@ function lazyg {
     git push
 }
 
+function gsta { git stash push @(if ($args.Count) { '-m', ($args -join ' ') }) }
+function gstu { git stash push --include-untracked @(if ($args.Count) { '-m', ($args -join ' ') }) }
+function gstall { git stash push --all @(if ($args.Count) { '-m', ($args -join ' ') }) }
+function gstl { git stash list @args }
+
+function Invoke-GitStash {
+    param([string[]]$Command, [string[]]$Words)
+
+    if (-not $Words) {
+        git stash @Command
+        return
+    }
+
+    # stash@{n} and n are passed to git unchanged; anything else is a stash name.
+    $name = $Words -join ' '
+    if ($name -match '^(stash@\{\d+\}|\d+)$') {
+        git stash @Command $name
+        return
+    }
+
+    $stashes = git stash list --format='%gd%x09%gs'
+    if ($LASTEXITCODE -ne 0) {
+        return
+    }
+
+    # Named stashes are listed as "On <branch>: <name>"; branch names cannot contain ':'.
+    $match = $stashes |
+        Where-Object { ($_ -split "`t", 2)[1] -match '^On [^:]+: (.*)$' -and $Matches[1] -eq $name } |
+        Select-Object -First 1
+
+    if (-not $match) {
+        Write-Error "No stash named: $name"
+        return
+    }
+
+    git stash @Command ($match -split "`t", 2)[0]
+}
+
+function gstp { Invoke-GitStash pop $args }
+function gstaa { Invoke-GitStash apply $args }
+function gstd { Invoke-GitStash drop $args }
+function gsts { Invoke-GitStash @('show', '--patch') $args }
+
 function sysinfo { Get-ComputerInfo }
 
 function flushdns {
@@ -751,7 +794,17 @@ Git:
   gp/gpush          git push
   gpull             git pull
   gs                git status
+  gsta [name]       git stash push [-m <name>]
+  gstaa [stash]     git stash apply [<stash>]
+  gstall [name]     git stash push -a [-m <name>]
+  gstd [stash]      git stash drop [<stash>]
+  gstl              git stash list
+  gstp [stash]      git stash pop [<stash>]
+  gsts [stash]      git stash show -p [<stash>]
+  gstu [name]       git stash push -u [-m <name>]
   lazyg <message>   git add .; git commit -m <message>; git push
+
+  <stash> is stash@{n}, n, or a name given to gsta/gstu/gstall (newest match).
 
 Shortcuts:
   cpy <text>        Copy text to the clipboard.
