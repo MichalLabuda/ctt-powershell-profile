@@ -567,9 +567,27 @@ function lazyg {
     git push
 }
 
-function gsta { git stash push @(if ($args.Count) { '-m', ($args -join ' ') }) }
-function gstu { git stash push --include-untracked @(if ($args.Count) { '-m', ($args -join ' ') }) }
-function gstall { git stash push --all @(if ($args.Count) { '-m', ($args -join ' ') }) }
+function Test-GitStashRef {
+    param([string]$Name)
+    $Name -match '^(stash@\{\d+\}|\d+)$'
+}
+
+function Invoke-GitStashPush {
+    param([string[]]$Options, [string[]]$Words)
+
+    # Names like n or stash@{n} would be taken as stash references by gstp, gstaa, gstd and gsts.
+    $name = $Words -join ' '
+    if (Test-GitStashRef $name) {
+        Write-Error "Stash name looks like a stash reference, choose another: $name"
+        return
+    }
+
+    git stash push @Options @(if ($name) { '-m', $name })
+}
+
+function gsta { Invoke-GitStashPush @() $args }
+function gstu { Invoke-GitStashPush '--include-untracked' $args }
+function gstall { Invoke-GitStashPush '--all' $args }
 function gstl { git stash list @args }
 
 function Invoke-GitStash {
@@ -582,7 +600,7 @@ function Invoke-GitStash {
 
     # stash@{n} and n are passed to git unchanged; anything else is a stash name.
     $name = $Words -join ' '
-    if ($name -match '^(stash@\{\d+\}|\d+)$') {
+    if (Test-GitStashRef $name) {
         git stash @Command $name
         return
     }
@@ -594,7 +612,7 @@ function Invoke-GitStash {
 
     # Named stashes are listed as "On <branch>: <name>"; branch names cannot contain ':'.
     $match = $stashes |
-        Where-Object { ($_ -split "`t", 2)[1] -match '^On [^:]+: (.*)$' -and $Matches[1] -eq $name } |
+        Where-Object { ($_ -split "`t", 2)[1] -match '^On [^:]+: (.*)$' -and $Matches[1] -ceq $name } |
         Select-Object -First 1
 
     if (-not $match) {
@@ -805,6 +823,7 @@ Git:
   lazyg <message>   git add .; git commit -m <message>; git push
 
   <stash> is stash@{n}, n, or a name given to gsta/gstu/gstall (newest match).
+  Names that look like stash@{n} or n are rejected when saving.
 
 Shortcuts:
   cpy <text>        Copy text to the clipboard.
